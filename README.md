@@ -13,7 +13,7 @@ Configure:
     Jnaerator.settings
 
     jnaeratorTargets += Jnaerator.Target(
-      headerFile = baseDirectory.value / "lib" / "libnative.h",
+      headerFile = List(baseDirectory.value / "lib" / "libnative.h"),
       packageName = "com.native",
       libraryName = "VeryNative")
 

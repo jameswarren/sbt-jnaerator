@@ -23,30 +23,28 @@ object JnaeratorPlugin extends AutoPlugin {
         case object JNA extends Runtime
         case object BridJ extends Runtime
       }
-      case class Target(
-        headerFile: File,
+      case class Target(headerFiles: Seq[File],
         packageName: String,
         libraryName: String,
         extraArgs: Seq[String] = Nil)
 
       lazy val settings = inConfig(jnaerator)(Seq[Setting[_]](
-        sourceDirectory := ((sourceDirectory in Compile) { _ / "native" }).value,
-        sourceDirectories := ((sourceDirectory in Compile) { _ :: Nil }).value,
-        sourceManaged := ((sourceManaged in Compile) { _ / "jnaerator_interfaces" }).value,
+        sourceDirectory := (sourceDirectory in Compile) { _ / "native" }.value,
+        sourceDirectories := (sourceDirectory in Compile) { _ :: Nil }.value,
+        sourceManaged := (sourceManaged in Compile) { _ / "jnaerator_interfaces" }.value,
         jnaeratorGenerate <<= runJnaerator
       )) ++ Seq[Setting[_]](
         jnaeratorTargets := Nil,
         jnaeratorRuntime := Runtime.BridJ,
-        version := ((jnaeratorRuntime in jnaerator) {
+        version := (jnaeratorRuntime in jnaerator) {
           /* Latest versions against which the targetted version of JNAerator is
            * known to be compatible */
           case Runtime.JNA => "4.2.1"
           case Runtime.BridJ => "0.7.0"
-        }).value,
+        }.value,
         cleanFiles += (sourceManaged in jnaerator).value,
 
-        // watchSources ++= (jnaeratorTargets in jnaerator).flatMap(_.join).map { _.map(_.headerFile) }.value,
-        watchSources ++= (jnaeratorTargets in jnaerator).map { _.map(_.headerFile) }.value,
+        watchSources ++= (jnaeratorTargets in jnaerator).map { _.flatMap(_.headerFiles) }.value,
         watchSources += file("."),
 
         sourceGenerators in Compile += (jnaeratorGenerate in jnaerator).taskValue,
@@ -63,28 +61,29 @@ object JnaeratorPlugin extends AutoPlugin {
     private def runJnaerator: Def.Initialize[Task[Seq[File]]] = Def.task {
 
       val targets = (jnaeratorTargets in jnaerator).value
-      val s = (streams.value)
+      val s = streams.value
       val runtime = (jnaeratorRuntime in jnaerator).value
       val outputPath = (sourceManaged in jnaerator).value
 
-      val targetId = "c" + (targets.toList.map { target =>
+      val targetId = "c" + targets.toList.map { target =>
         (target, runtime, outputPath)
-      }).hashCode
-      val cachedCompile = FileFunction.cached(s.cacheDirectory / "jnaerator" / targetId, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { (_: Set[File]) =>
+      }.hashCode
+      val cachedCompile = FileFunction.cached(s.cacheDirectory / "jnaerator" / targetId,
+        inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { (_: Set[File]) =>
         IO.delete(outputPath)
         outputPath.mkdirs()
 
         targets.flatMap { target =>
-	        // java -jar bin/jnaerator.jar -package com.package.name -library libName lib/libName.h -o src/main/java -mode Directory -f -scalaStructSetters
+          // java -jar bin/jnaerator.jar -package com.package.name -library libName lib/libName.h -o src/main/java -mode Directory -f -scalaStructSetters
+          val headers = target.headerFiles.map(_.getCanonicalPath)
           val args = List(
             "-package", target.packageName,
             "-library", target.libraryName,
-            target.headerFile.getCanonicalPath,
             "-o", outputPath.getCanonicalPath,
             "-mode", "Directory",
-            "-f", "-scalaStructSetters") ++ target.extraArgs
+            "-f", "-scalaStructSetters") ++ target.extraArgs ++ headers
 
-          s.log.info(s"(${target.headerFile.getName}) Running JNAerator with args ${args.mkString(" ")}")
+          s.log.info(s"Running JNAerator with args ${args.mkString(" ")}")
           try {
             com.ochafik.lang.jnaerator.JNAerator.main(args.toArray)
           } catch { case e: Exception =>
@@ -94,9 +93,7 @@ object JnaeratorPlugin extends AutoPlugin {
           (outputPath ** "*.java").get
         }.toSet
       }
-      cachedCompile(targets.map(_.headerFile).toSet).toSeq
+      cachedCompile(targets.flatMap(_.headerFiles).toSet).toSeq
     }
   }
-
-
 }
