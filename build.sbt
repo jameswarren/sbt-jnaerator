@@ -2,7 +2,7 @@ name := "sbt-jnaerator"
 
 sbtPlugin := true
 
-version := "0.3.2-SNAPSHOT"
+version := "0.3.1-helix"
 
 organization := "com.timcharper"
 
